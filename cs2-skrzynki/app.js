@@ -1116,6 +1116,22 @@
   }
 
   // ---------- Router ----------
+  // The current page lives in `path` (e.g. "/skrzynka/kilowatt"). The URL hash is only a mirror of it,
+  // so navigation also works where the hash can't be changed (e.g. an embedded preview).
+  const pathFromHash = () => (/^#\//.test(location.hash) ? location.hash.slice(1) : '/skrzynki');
+  let path = pathFromHash();
+
+  function navigate(to) {
+    path = to;
+    try {
+      history.pushState(null, '', `#${to}`);
+    } catch (e) {
+      // History not available here – the page still switches.
+    }
+    route();
+    $('#app').focus({ preventScroll: true });
+  }
+
   function stopSpin() {
     if (!ui.spinning) return;
     ui.spinning = false;
@@ -1125,7 +1141,7 @@
   }
 
   function route() {
-    const [page = '', arg = ''] = location.hash.replace(/^#\/?/, '').split('/');
+    const [page = '', arg = ''] = path.replace(/^\//, '').split('/');
     stopSpin();
     let navKey = page;
     let title = '';
@@ -1160,6 +1176,16 @@
   // Actions that still work while something is spinning.
   const FREE_ACTIONS = new Set(['open-funds', 'close-dialog', 'funds-preset', 'toggle-sound']);
 
+  // In-page replacement for window.confirm()
+  let confirmAction = null;
+  function askConfirm({ title, text, ok }, onConfirm) {
+    $('#confirm-title').textContent = title;
+    $('#confirm-text').textContent = text;
+    $('#confirm-ok').textContent = ok;
+    confirmAction = onConfirm;
+    $('#confirm-dialog').showModal();
+  }
+
   const actions = {
     'open-funds': () => openFunds(),
     'close-dialog': el => el.closest('dialog').close(),
@@ -1171,6 +1197,12 @@
       state.settings.sound = !state.settings.sound;
       save();
       renderSoundButton();
+    },
+    'confirm-ok': () => {
+      const run = confirmAction;
+      confirmAction = null;
+      $('#confirm-dialog').close();
+      if (run) run();
     },
 
     'set-count': el => setCount(Number(el.dataset.count)),
@@ -1204,10 +1236,15 @@
       renderInventory();
     },
     'inv-sell-all': () => {
-      const total = sumPrice(state.inventory);
-      if (!window.confirm(`Sprzedać wszystkie przedmioty (${state.inventory.length}) za ${money(total)}?`)) return;
-      sellItems(state.inventory.map(it => it.uid));
-      renderInventory();
+      const count = state.inventory.length;
+      askConfirm({
+        title: 'Sprzedać cały ekwipunek?',
+        text: `${count} ${itemsWord(count)} za ${money(sumPrice(state.inventory))}. Tego nie da się cofnąć.`,
+        ok: 'Sprzedaj wszystko',
+      }, () => {
+        sellItems(state.inventory.map(it => it.uid));
+        renderInventory();
+      });
     },
     'inv-more': () => {
       ui.invLimit += PAGE_SIZE;
@@ -1223,7 +1260,7 @@
       ui.stake = new Set([el.dataset.id]);
       ui.upResult = null;
       if (ui.target && ui.target.price <= sumPrice(stakeItems())) ui.target = null;
-      location.hash = '#/upgrader';
+      navigate('/upgrader');
     },
 
     'up-stake': el => toggleStake(el.dataset.id, el.classList.contains('card-hit') ? el : null),
@@ -1244,8 +1281,11 @@
       renderTargets();
     },
 
-    'reset-all': () => {
-      if (!window.confirm('Na pewno zresetować konto? Stracisz saldo, ekwipunek i statystyki.')) return;
+    'reset-all': () => askConfirm({
+      title: 'Zresetować konto?',
+      text: `Stracisz saldo, ekwipunek i statystyki. Zaczniesz od nowa z ${money(START_BALANCE)}.`,
+      ok: 'Zresetuj konto',
+    }, () => {
       state = defaultState();
       save();
       Object.assign(ui, { invSelected: new Set(), stake: new Set(), target: null, upResult: null, lastDrops: [] });
@@ -1254,11 +1294,17 @@
       renderFeed();
       renderSoundButton();
       route();
-      toast('Konto zresetowane. Masz znowu ' + money(START_BALANCE) + '.', 'success');
-    },
+      toast(`Konto zresetowane. Masz znowu ${money(START_BALANCE)}.`, 'success');
+    }),
   };
 
   document.addEventListener('click', event => {
+    const link = event.target.closest('a[href^="#/"]');
+    if (link && event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+      event.preventDefault();
+      navigate(link.getAttribute('href').slice(1));
+      return;
+    }
     const el = event.target.closest('[data-action]');
     if (!el || el.disabled) return;
     const name = el.dataset.action;
@@ -1313,9 +1359,10 @@
     }, 120);
   });
 
-  window.addEventListener('hashchange', () => {
+  // Back / forward buttons and hand-edited URLs
+  window.addEventListener('popstate', () => {
+    path = pathFromHash();
     route();
-    $('#app').focus({ preventScroll: true });
   });
 
   // ---------- Start ----------

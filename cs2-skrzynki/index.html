@@ -92,6 +92,18 @@
     </div>
   </dialog>
 
+  <!-- Confirmation (used instead of window.confirm) -->
+  <dialog id="confirm-dialog" class="dialog" aria-labelledby="confirm-title" aria-describedby="confirm-text">
+    <div class="dialog-head">
+      <h2 id="confirm-title">Na pewno?</h2>
+    </div>
+    <p class="muted" id="confirm-text"></p>
+    <div class="dialog-actions">
+      <button type="button" class="btn" data-action="close-dialog" autofocus>Anuluj</button>
+      <button type="button" class="btn btn-danger" id="confirm-ok" data-action="confirm-ok">Potwierdź</button>
+    </div>
+  </dialog>
+
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
   <script src="data.js"></script>
